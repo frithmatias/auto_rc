@@ -6,6 +6,14 @@ SoftwareSerial rfReceiver(4, 5);  // RX, TX (solo usás RX en el receptor)
 // Servo Dirección
 Servo steeringServo;
 int pinServo = 2;  // pin digital para el servo
+int position = 90;
+unsigned long positionPreviousMillis = 0;
+const long positionInterval = 100;  // intervalo para actualizar la posición al recibir instrucciones para doblar
+#define TURN_RIGHT true
+#define TURN_LEFT false
+unsigned long autoCenterPreviousMillis = 0;
+const long autoCenterInterval = 1000;  // intervalo para enderezar al no recibir instrucciones para doblar
+
 
 // Motor 1
 int ENA = 10;
@@ -27,7 +35,6 @@ bool lightsOn = false;  // activadas o desactivadas
 const int LIGHTS_DEFAULT_POWER = 150;
 unsigned long flashPreviousMillis = 0;
 const long flashInterval = 100;  // intervalo para apagar el guiño
-
 
 // int lightsHigh = 4; // pin reservado para flash
 
@@ -94,6 +101,9 @@ void setup() {
 
   // Luz Reversa
   pinMode(reverse, OUTPUT);
+
+
+  steeringServo.write(position);
 }
 
 void loop() {
@@ -102,17 +112,37 @@ void loop() {
     String command = rfReceiver.readStringUntil('\n');
     Serial.println("Recibido: " + command);
 
-    if (command == "FWD") speedTo(true, 200);
-    else if (command == "REV") speedTo(false, 200);
-    else if (command == "FLASH") lightsFlash();
-    else if (command == "BLINK_LEFT") lightsBlinkingToggle(BLINK_LEFT);
-    else if (command == "BLINK_RIGHT") lightsBlinkingToggle(BLINK_RIGHT);
-    else if (command == "BLINK_BOTH") lightsBlinkingToggle(BLINK_BOTH);
-    else if (command == "HORN") hornOn(255);
-    else if (command == "HORN_OFF") hornOff();
+    if (command == "FWD")
+      speedTo(true, 200);
+    else if (command == "REV")
+      speedTo(false, 200);
+    else if (command == "STOP")
+      brake();
+    else if (command == "SLOW")
+      slowDown();
+    else if (command == "LEFT")
+      turnTo(TURN_LEFT);  // ajustá el ángulo según tu montaje
+    else if (command == "RIGHT")
+      turnTo(TURN_RIGHT);  // ajustá el ángulo según tu montaje
+    else if (command == "CENTER")
+      turnCenter();
+    else if (command == "LIGHTS_ON")
+      lightsFrontOn();
+    else if (command == "LIGHTS_OFF")
+      lightsFrontOff();
+    else if (command == "FLASH")
+      lightsFlash();
+    else if (command == "BLINK_LEFT")
+      lightsBlinkingToggle(BLINK_LEFT);
+    else if (command == "BLINK_RIGHT")
+      lightsBlinkingToggle(BLINK_RIGHT);
+    else if (command == "BLINK_BOTH")
+      lightsBlinkingToggle(BLINK_BOTH);
+    else if (command == "HORN")
+      hornOn(255);
+    else if (command == "HORN_OFF")
+      hornOff();
   }
-
-
 
   long distance = checkDistance();
 
@@ -123,6 +153,7 @@ void loop() {
 
   lightsBlinkingCheck();
   lightsFlashCheck();
+  autoCenterCheck();
   // Acelerar();
   // Desacelerar();
   // Frenar();
@@ -187,12 +218,50 @@ long checkDistance() {
   return distance;
 }
 
-void turnTo(int angle) {
-  // ajustá el ángulo según tu montaje
-  steeringServo.write(angle);
+void turnTo(boolean side) {
+
+  autoCenterPreviousMillis = millis();
+
+  if (millis() - positionPreviousMillis >= positionInterval) {
+    positionPreviousMillis = millis();
+    if (side == TURN_RIGHT) {
+      // Giro a la derecha
+      if (position < 135) {
+        position += 10;                 // ajustá el ángulo máximo según tu montaje
+        steeringServo.write(position);  // ajustá el ángulo según tu montaje
+      }
+    } else if (side == TURN_LEFT) {
+
+      // Giro a la izquierda
+      if (position > 45) {
+        position -= 10;                 // ajustá el ángulo mínimo según tu montaje
+        steeringServo.write(position);  // ajustá el ángulo según tu montaje
+      }
+    }
+  }
+}
+
+void autoCenterCheck() {
+  unsigned long currentMillis = millis();
+
+  // Si pasó más de 1 segundo sin comandos de giro
+  if (currentMillis - autoCenterPreviousMillis >= autoCenterInterval) {
+    autoCenterPreviousMillis = currentMillis;
+
+    if (position > 90) {
+      position -= 10;  // se acerca al centro desde la derecha
+      if (position < 90) position = 90;
+      steeringServo.write(position);
+    } else if (position < 90) {
+      position += 10;  // se acerca al centro desde la izquierda
+      if (position > 90) position = 90;
+      steeringServo.write(position);
+    }
+  }
 }
 
 void turnCenter() {
+  position = 90;
   steeringServo.write(90);
 }
 
@@ -205,7 +274,6 @@ void lightsFrontOff() {
   lightsOn = false;
   analogWrite(lights, 0);
 }
-
 
 void lightsFlashCheck() {
   unsigned long currentMillis = millis();
