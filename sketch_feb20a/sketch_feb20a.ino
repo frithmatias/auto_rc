@@ -20,11 +20,14 @@ int Luces = 3;  // pin PWM
 int Bocina = 11;  // pin PWM
 
 // Balizas (digital)
-int Balizas = 4;  // pin digital
-bool balizasOn = false; // activadas o desactivadas
-bool balizasStatus = false; // luz encendida o apagada
+int Balizas = 4;             // pin digital
+bool balizasOn = false;      // activadas o desactivadas
+bool balizasStatus = false;  // luz encendida o apagada
 unsigned long previousMillis = 0;
-const long interval = 500; // intervalo de parpadeo en ms
+const long interval = 500;  // intervalo de parpadeo en ms
+
+// luz de stop trasera
+int Stop = A0;
 
 void setup() {
 
@@ -48,6 +51,9 @@ void setup() {
   pinMode(Luces, OUTPUT);
   pinMode(Bocina, OUTPUT);
   pinMode(Balizas, OUTPUT);
+
+  // Luz Stop
+  pinMode(Stop, OUTPUT);
 }
 
 void loop() {
@@ -64,6 +70,14 @@ void loop() {
   //Desacelerar();
   //Frenar();
   //Atras();
+}
+
+void EncenderStop() {
+  digitalWrite(Stop, HIGH);
+}
+
+void ApagarStop() {
+  digitalWrite(Stop, LOW);
 }
 
 void checkBalizas() {
@@ -105,7 +119,9 @@ void ToggleBalizas() {
   balizasOn = !balizasOn;
 }
 
-  void Acelerar(int velocidad) {
+void Acelerar(int velocidad) {
+
+  ApagarStop();
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, HIGH);
@@ -151,6 +167,9 @@ void Frenar() {
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, LOW);
   analogWrite(ENB, 0);
+
+  // Luz de stop
+  EncenderStop();
 }
 
 long medirDistancia() {
