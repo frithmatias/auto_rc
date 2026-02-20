@@ -1,3 +1,8 @@
+#include <Servo.h>
+
+// Servo Dirección
+Servo steeringServo;
+int pinServo = 2; // pin digital para el servo
 
 // Motor 1
 int ENA = 10;
@@ -14,24 +19,30 @@ int Trig = 12;
 int Echo = 13;
 
 // Luces delanteras (PWM)
-int Luces = 3;  // pin PWM
+int lights = 3; // pin PWM
 
 // Bocina (PWM)
-int Bocina = 11;  // pin PWM
+int horn = 11; // pin PWM
 
 // Balizas (digital)
-int Balizas = 4;             // pin digital
-bool balizasOn = false;      // activadas o desactivadas
-bool balizasStatus = false;  // luz encendida o apagada
+int hazard = 4;            // pin digital
+bool hazardOn = false;     // activadas o desactivadas
+bool hazardStatus = false; // luz encendida o apagada
 unsigned long previousMillis = 0;
-const long interval = 500;  // intervalo de parpadeo en ms
+const long interval = 500; // intervalo de parpadeo en ms
 
 // luz de stop trasera
-int Stop = A0;
+int stop = A0;
+int reverse = A1; // luz de reversa
 
-void setup() {
+void setup()
+{
 
   Serial.begin(9600);
+
+  // Servo
+  steeringServo.attach(pinServo);
+  steeringServo.write(90); // posición inicial (centro)
 
   // Motor 1
   pinMode(ENA, OUTPUT);
@@ -47,116 +58,81 @@ void setup() {
   pinMode(Trig, OUTPUT);
   pinMode(Echo, INPUT);
 
-  // Luces, bocina y balizas
-  pinMode(Luces, OUTPUT);
-  pinMode(Bocina, OUTPUT);
-  pinMode(Balizas, OUTPUT);
+  // Luces
+  pinMode(lights, OUTPUT);
+
+  // Balizas
+  pinMode(hazard, OUTPUT);
 
   // Luz Stop
-  pinMode(Stop, OUTPUT);
+  pinMode(stop, OUTPUT);
+
+  // Luz Reversa
+  pinMode(reverse, OUTPUT);
+
+  // Bocina
+  pinMode(horn, OUTPUT);
 }
 
-void loop() {
+void loop()
+{
 
-  long distancia = medirDistancia();
+  long distancia = checkDistance();
 
-  if (distancia <= 50) {
+  if (distancia <= 50)
+  {
     // Si hay obstáculo cerca, frena
-    Frenar();
+    brake();
   }
 
-  checkBalizas();
-  //Acelerar();
-  //Desacelerar();
-  //Frenar();
-  //Atras();
+  lightsHazardCheck();
+  // Acelerar();
+  // Desacelerar();
+  // Frenar();
+  // Atras();
 }
 
-void EncenderStop() {
-  digitalWrite(Stop, HIGH);
-}
+void speedTo(bool forward, int speed)
+{
 
-void ApagarStop() {
-  digitalWrite(Stop, LOW);
-}
-
-void checkBalizas() {
-  if (balizasOn) {
-    unsigned long currentMillis = millis();
-
-    if (currentMillis - previousMillis >= interval) {
-      previousMillis = currentMillis;
-
-      // Cambiar estado
-      balizasStatus = !balizasStatus;
-      digitalWrite(Balizas, balizasStatus ? HIGH : LOW);
-    }
-  } else {
-    // Si balizas están apagadas, aseguramos que el pin quede en LOW
-    digitalWrite(Balizas, LOW);
-    balizasStatus = false;
+  if (forward)
+  {
+    lightsStopOff();
+    lightsReverseOff();
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
   }
+  else
+  {
+    lightsReverseOn();
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  }
+
+  analogWrite(ENA, speed);
+  analogWrite(ENB, speed);
 }
 
+void slowDown()
+{
 
-void EncenderLuces(int brillo) {
-  analogWrite(Luces, brillo);  // 0–255
-}
-
-void ApagarLuces() {
-  analogWrite(Luces, 0);
-}
-
-void ActivarBocina(int intensidad) {
-  analogWrite(Bocina, intensidad);  // 0–255
-}
-
-void ApagarBocina() {
-  analogWrite(Bocina, 0);
-}
-
-void ToggleBalizas() {
-  balizasOn = !balizasOn;
-}
-
-void Acelerar(int velocidad) {
-
-  ApagarStop();
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENA, velocidad);
-  analogWrite(ENB, velocidad);
-}
-
-void Reversa(int velocidad) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
-  analogWrite(ENA, velocidad);
-  analogWrite(ENB, velocidad);
-}
-
-void Desacelerar() {
-
-  // Motor 1 hacia adelante
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-
-  // Motor 2 hacia adelante
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-
-  for (int velocidad = 255; velocidad >= 0; velocidad--) {
+  for (int velocidad = 255; velocidad >= 0; velocidad--)
+  {
     analogWrite(ENA, velocidad);
     analogWrite(ENB, velocidad);
-    delay(20);  // ajustá este delay para controlar la rapidez de la aceleración
+    delay(20); // ajustá este delay para controlar la rapidez de la aceleración
   }
 }
 
-void Frenar() {
+void brake()
+{
+
+  // Luz de stop
+  lightsStopOn();
 
   // Motor 1
   digitalWrite(IN1, LOW);
@@ -167,12 +143,10 @@ void Frenar() {
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, LOW);
   analogWrite(ENB, 0);
-
-  // Luz de stop
-  EncenderStop();
 }
 
-long medirDistancia() {
+long checkDistance()
+{
   digitalWrite(Trig, LOW);
   delayMicroseconds(2);
   digitalWrite(Trig, HIGH);
@@ -180,6 +154,85 @@ long medirDistancia() {
   digitalWrite(Trig, LOW);
 
   long duracion = pulseIn(Echo, HIGH);
-  long distancia = duracion * 0.034 / 2;  // en cm
+  long distancia = duracion * 0.034 / 2; // en cm
   return distancia;
+}
+
+void turnTo(int angle)
+{
+  // ajustá el ángulo según tu montaje
+  steeringServo.write(angle);
+}
+
+void turnCenter()
+{
+  steeringServo.write(90);
+}
+
+void lightsFrontOn(int power)
+{
+  analogWrite(lights, power); // 0–255
+}
+
+void lightsFrontOff()
+{
+  analogWrite(lights, 0);
+}
+
+void lightsStopOn()
+{
+  digitalWrite(stop, HIGH);
+}
+
+void lightsStopOff()
+{
+  digitalWrite(stop, LOW);
+}
+
+void lightsReverseOn()
+{
+  digitalWrite(reverse, HIGH);
+}
+
+void lightsReverseOff()
+{
+  digitalWrite(reverse, LOW);
+}
+
+void lightsHazardCheck()
+{
+  if (hazardOn)
+  {
+    unsigned long currentMillis = millis();
+
+    if (currentMillis - previousMillis >= interval)
+    {
+      previousMillis = currentMillis;
+
+      // Cambiar estado
+      hazardStatus = !hazardStatus;
+      digitalWrite(hazard, hazardStatus ? HIGH : LOW);
+    }
+  }
+  else
+  {
+    // Si balizas están apagadas, aseguramos que el pin quede en LOW
+    digitalWrite(hazard, LOW);
+    hazardStatus = false;
+  }
+}
+
+void lightsHazardToggle()
+{
+  hazardOn = !hazardOn;
+}
+
+void hornOn(int volume)
+{
+  analogWrite(horn, volume); // 0–255
+}
+
+void hornOff()
+{
+  analogWrite(horn, 0);
 }

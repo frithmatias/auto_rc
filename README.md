@@ -14,7 +14,7 @@ Este proyecto consiste en el desarrollo de un **auto RC autónomo** utilizando u
 - Balizas (LED digital)
 - Bocina (PWM)
 - Baterías 18650 x6 2S3P
-- Tranceptor RF para TX/RX en 433Mhz
+- Transceptor RF para TX/RX en 433Mhz
 - Chasis RC 1/10 en 3D con suspensión de doble horquilla
 
 ---
