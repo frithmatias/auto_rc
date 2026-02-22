@@ -9,6 +9,7 @@ RH_ASK rfReceiver(2400, 4, 5);  // bitRate, rxPin, txPin
 
 
 
+const int POWER_OFF = 0;
 const int POWER_LOW = 50;
 const int POWER_HIGH = 255;
 
@@ -51,7 +52,8 @@ int stSpeed = 0;
 bool stForward = true;
 int stAngle = 0;
 
-bool stLights = false;  // activadas o desactivadas
+int stLights = 0;  // 0 off 1 low 2 high
+bool stLightsSet = false;
 bool stFlash = false;
 bool stBrakes = false;  // apply brakes
 bool stStop = false;    // STOP lights
@@ -115,16 +117,11 @@ void setup() {
 void initStatus() {
 
 
-  Serial.println("ENCENDIENDO TODAS");
-  lightsOn(POWER_LOW);
+  setLights(POWER_LOW);
   lightsStopOn();
   lightsReverseOn();
-
   delay(1000);
-
-  Serial.println("APAGANDO TODAS");
-
-  lightsOff();
+  setLights(POWER_OFF);
   unapplyBrakes();
   lightsReverseOff();
 }
@@ -167,18 +164,43 @@ void loop() {
     bool blinkBoth = values[9];   // 0/1
 
     if (lights) {
-      if (!stLights) lightsOn(POWER_LOW);
+
+      if (!stLightsSet) {
+
+        stLightsSet = true;
+
+        if (stLights == 0) {
+          setLights(POWER_LOW);
+        }
+
+        else if (stLights == 1) {
+          setLights(POWER_HIGH);
+        }
+
+        else if (stLights == 2) {
+          setLights(POWER_OFF);
+        }
+      }
     } else {
-      if (stLights) lightsOff();
+      if (stLightsSet) {
+        stLightsSet = false;
+      }
     }
 
     if (flash) {
-      lightsOn(POWER_HIGH);
+      analogWrite(lightsPin, POWER_HIGH);
     } else {
-      if (stLights) {
-        lightsOn(POWER_LOW);
-      } else {
-        lightsOff();
+
+      if (stLights == 0) {
+        analogWrite(lightsPin, POWER_OFF);  // 0–255
+      }
+
+      else if (stLights == 1) {
+        analogWrite(lightsPin, POWER_LOW);  // 0–255
+      }
+
+      else if (stLights == 2) {
+        analogWrite(lightsPin, POWER_HIGH);  // 0–255
       }
     }
 
@@ -320,14 +342,23 @@ void turnCenter() {
   //steeringServo.write(90);
 }
 
-void lightsOn(int power) {
-  stLights = true;
-  analogWrite(lightsPin, power);  // 0–255
-}
+void setLights(int power) {
 
-void lightsOff() {
-  stLights = false;
-  analogWrite(lightsPin, LOW);
+  switch (power) {
+    case POWER_OFF:
+      stLights = 0;
+      break;
+    case POWER_LOW:
+      stLights = 1;
+      break;
+    case POWER_HIGH:
+      stLights = 2;
+      break;
+  }
+  Serial.print("SET STATUS LIGHTS: ");
+  Serial.println(stLights);
+
+  analogWrite(lightsPin, power);  // 0–255
 }
 
 void lightsFlashOn() {
@@ -342,10 +373,10 @@ void lightsFlashCheck() {
     if (currentMillis - flashPreviousMillis >= flashInterval) {
       flashPreviousMillis = currentMillis;
 
-      if (stLights) {
-        lightsOn(POWER_LOW);
+      if (stLights == 1) {
+        setLights(POWER_LOW);
       } else {
-        lightsOff();
+        setLights(POWER_OFF);
       }
     }
   }
@@ -410,8 +441,6 @@ void lightsBlinkingCheck() {
 }
 
 void lightsBlinkingOn(int side) {
-  Serial.println("ENCENDIENDO BLINK DEL LADO:");
-  Serial.println(side);
   stBlinkSide = side;
   switch (side) {
     case 0:
@@ -427,7 +456,6 @@ void lightsBlinkingOn(int side) {
 }
 
 void lightsBlinkingOff() {
-  Serial.println("blink off");
   stBlinkLeft = false;
   stBlinkRight = false;
   stBlinkBoth = false;
@@ -436,12 +464,10 @@ void lightsBlinkingOff() {
 void buzzerOn() {
   stBuzzer = true;
   //   for (int tone = 0; tone <= 255; tone++) {
-  //     Serial.println(tone);
   //   analogWrite(buzzerPin, tone);
   //   delay(200); // ajustá el delay para controlar la velocidad del barrido
   // }
   analogWrite(buzzerPin, 30);
-
 }
 
 void buzzerOff() {

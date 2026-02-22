@@ -82,6 +82,7 @@ void loop() {
 
     sendMessage(state.c_str());
 
+
 }
 
 void sendMessage(const char* state) {
