@@ -1,71 +1,82 @@
-#include <SPI.h>  // requerido por RadioHead
-#include <RH_ASK.h>
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
 
-RH_ASK rfReceiver(2400, 4, 5);  // bitRate, rxPin, txPin
+#include <Servo.h>
+Servo steeringServo;
 
-// Servo Dirección
-//#include <Servo.h>
-//Servo steeringServo;
+// 433 MHz
+// #include <RH_ASK.h> // RadioHead for 433 Mhz Module
+// RH_ASK rfReceiver(2400, 4, 5);  // bitRate, rxPin, txPin
 
 
-
-const int POWER_OFF = 0;
-const int POWER_LOW = 50;
-const int POWER_HIGH = 255;
-
-int position = 90;
-
-#define TURN_RIGHT true
-#define TURN_LEFT false
-#define GO_FORWARD true
-#define GO_REVERSE false
-#define BLINK_LEFT 0
-#define BLINK_RIGHT 1
-#define BLINK_BOTH 2
-
-int reversePin = A1;
-int stopPin = A0;
-int blinkLeftPin = A2;
-int blinkRightPin = A3;  // pin digital
-
-int pinServo = 2;  // pin digital para el servo
+// PWMs
+// 03 T2 -> Lights
+// 05 T0 -> Motor 1
+// 06 T0 -> Motor 2
+// 09 T1 -> SERVO
+// 10 T1 -> SERVO
+// 11 T2 -> MOSI SPI
 
 // Motor 1
-int ENA = 10;
-int IN1 = 9;
-int IN2 = 8;
+int pinServo = 2;   // Servo.h genera la señal con T1 dejan de funcionar 9 y 10
+int lightsPin = 3;  // PWM
 
 // Motor 2
-int ENB = 5;
-int IN3 = 7;
-int IN4 = 6;
+int IN1 = 4;
+int ENA = 5;  // PWM
+int ENB = 6;  // PWM
+int IN2 = 7;
+int IN3 = 8;
+int IN4 = 9;
 
-int lightsPin = 3;   // pin PWM
-int buzzerPin = 11;  // pin PWM
+int buzzerPin = 10;  //PWM
 
-// UltraSonido
-int Trig = 12;
-int Echo = 13;
+// MOSI 11
+// MISO 12
+// SCK  13
 
-// FLAGS
+const byte address[6] = "00001";  // misma dirección que el transmisor
+RF24 radio(A0, A1);               // NRF24L01 CE, CSN
+
+int stopPin = A2;
+int reversePin = A3;
+int blinkLeftPin = A4;
+int blinkRightPin = A5;
+
+// UltraSonido (bucar opciones digitales)
+int Trig = A6;  // I2C SDA
+int Echo = A7;  // I2C SCL
+
+// STATE
 int stSpeed = 0;
-bool stForward = true;
-int stAngle = 0;
-
+int stAngle = 90;
+bool stReverse = false;
 int stLights = 0;  // 0 off 1 low 2 high
 bool stLightsSet = false;
 bool stFlash = false;
-bool stBrakes = false;  // apply brakes
-bool stStop = false;    // STOP lights
-bool stReverse = false;
+bool stNitro = false;
+bool stBrakes = false;  // brakes applied
+bool stStop = false;    // lights
 bool stBuzzer = false;
-
-bool stBlinkLeft = false;   // activadas o desactivadas
-bool stBlinkRight = false;  // activadas o desactivadas
-bool stBlinkBoth = false;   // activadas o desactivadas
-
+bool stBlinkLeft = false;    // activadas o desactivadas
+bool stBlinkRight = false;   // activadas o desactivadas
+bool stBlinkBoth = false;    // activadas o desactivadas
 bool stBlinkStatus = false;  // luz encendida o apagada
 int stBlinkSide = 0;
+
+const bool GO_FORWARD = true;
+const bool GO_REVERSE = false;
+const bool TURN_RIGHT = true;
+const bool TURN_LEFT = false;
+const int POWER_OFF = 0;
+const int POWER_LOW = 150;
+const int POWER_HIGH = 255;
+const int BLINK_OFF = 0;
+const int BLINK_LEFT = 1;
+const int BLINK_RIGHT = 2;
+const int BLINK_BOTH = 3;
+
 
 unsigned long anglePreviousMillis = 0;
 const long angleInterval = 100;  // intervalo para actualizar la posición al recibir instrucciones para doblar
@@ -76,7 +87,6 @@ const long autoCenterInterval = 100;  // intervalo para enderezar al no recibir 
 unsigned long flashPreviousMillis = 0;
 const long flashInterval = 500;  // intervalo para apagar el guiño
 
-
 unsigned long blinkPreviousMillis = 0;
 const long blinkInterval = 500;  // intervalo de parpadeo en ms
 
@@ -85,13 +95,34 @@ void setup() {
   // RF Communication
   Serial.begin(9600);
   //rfReceiver.begin(1200);  // velocidad típica para 433 MHz
-  if (!rfReceiver.init()) {
-    Serial.println("RF init failed");
+  //if (!rfReceiver.init()) {
+  //  Serial.println("RF init failed");
+  //}
+
+  if (radio.begin()) {
+    Serial.println("Hardware encontrado.");
+  } else {
+    Serial.println("Error de conexión con el módulo RF.");
   }
 
+  radio.openReadingPipe(1, address);  // Configura dirección de recepción
+
+  // radio.setChannel(125);
+
+  // radio.setPALevel(RF24_PA_MIN);
+  // radio.setPALevel(RF24_PA_LOW);
+  // radio.setPALevel(RF24_PA_HIGH);
+  // radio.setPALevel(RF24_PA_MAX);
+
+  // radio.setDataRate(RF24_250KBPS);
+  // radio.setDataRate(RF24_1MBPS);
+  // radio.setDataRate(RF24_2MBPS);
+
+  radio.startListening();
+
   // Servo
-  //steeringServo.attach(pinServo);
-  //steeringServo.write(90);  // posición inicial (centro)
+  steeringServo.attach(pinServo);
+  steeringServo.write(90);  // posición inicial (centro)
 
   pinMode(ENA, OUTPUT);
   pinMode(IN1, OUTPUT);
@@ -111,57 +142,74 @@ void setup() {
   pinMode(Echo, INPUT);
 
   initStatus();
-  //steeringServo.write(position);
 }
 
 void initStatus() {
 
 
-  setLights(POWER_LOW);
+  setLights(POWER_HIGH);
   lightsStopOn();
   lightsReverseOn();
+  buzzerOff();
   delay(1000);
   setLights(POWER_OFF);
   unapplyBrakes();
   lightsReverseOff();
+  steeringServo.write(stAngle);
+}
+
+void loops() {
+  if (radio.available()) {
+    char msg[32] = "";
+    radio.read(&msg, sizeof(msg));  // lee hasta 32 bytes
+    Serial.print("Recibido: ");
+    Serial.println(msg);
+  }
 }
 
 void loop() {
-  uint8_t buf[32];
-  uint8_t buflen = sizeof(buf);
 
-  if (rfReceiver.recv(buf, &buflen)) {
+  //uint8_t buf[32];
+  //uint8_t buflen = sizeof(buf);
 
-    buf[buflen] = '\0';  // terminador
+  //if (rfReceiver.recv(buf, &buflen)) {
+  if (radio.available()) {
 
-    char message[32];
-    strncpy(message, (char *)buf, buflen);
-    message[buflen] = '\0';
-
-    Serial.println(message);
+    //buf[buflen] = '\0';  // terminador
+    //char message[32];
+    //strncpy(message, (char *)buf, buflen);
+    //message[buflen] = '\0';
+    char msg[32] = "";
+    radio.read(&msg, sizeof(msg));  // lee hasta 32 bytes
+    Serial.print("Recibido: ");
+    Serial.println(msg);
 
     // Parsear CSV
-    int values[10];  // cantidad de campos esperados
+    int values[9];  // cantidad de campos esperados
     int index = 0;
-    char *token = strtok(message, ",");
-    while (token != NULL && index < 10) {
+    char *token = strtok(msg, ",");
+    while (token != NULL && index < 9) {
       values[index++] = atoi(token);
       token = strtok(NULL, ",");
     }
 
-    // Asignar variables
-    int speed = values[0];     // 0-255
-    bool forward = values[1];  // 0=reverse, 1=forward
-    int angle = values[2];     // servo angle
 
-    bool lights = values[3];  // 0/1
-    bool flash = values[4];   // 0/1
-    bool brake = values[5];   // 0/1
-    bool buzzer = values[6];  // 0/1
-
+    int speed = values[0];        // 0-255
+    int direction = values[1];    // servo angle
+    bool lights = values[2];      // 0/1
+    bool flash = values[3];       // 0/1
+    bool nitro = values[4];       // 0/1
+    bool brake = values[5];       // 0/1
+    bool buzzer = values[6];      // 0/1
     bool blinkLeft = values[7];   // 0/1
     bool blinkRight = values[8];  // 0/1
-    bool blinkBoth = values[9];   // 0/1
+
+    // State Managment
+
+    if (direction) {
+      int angle = map(direction, 0, 1023, 10, 170);
+      turnTo(angle);
+    }
 
     if (lights) {
 
@@ -204,6 +252,13 @@ void loop() {
       }
     }
 
+
+    if (nitro) {
+      if (!stNitro) applyNitro();
+    } else {
+      if (stNitro) unapplyNitro();
+    }
+
     if (brake) {
       if (!stBrakes) applyBrakes();
     } else {
@@ -216,24 +271,35 @@ void loop() {
       if (stBuzzer) buzzerOff();
     }
 
-    if (blinkLeft) {
-      if (!stBlinkLeft) lightsBlinkingOn(BLINK_LEFT);
-    } else {
-      if (stBlinkLeft) lightsBlinkingOff();
-    }
+    if (!nitro) {
 
-    if (blinkRight) {
-      if (!stBlinkRight) lightsBlinkingOn(BLINK_RIGHT);
-    } else {
-      if (stBlinkRight) lightsBlinkingOff();
-    }
+      if (blinkLeft && !blinkRight) {
 
-    if (blinkBoth) {
-      if (!stBlinkBoth) lightsBlinkingOn(BLINK_BOTH);
-    } else {
-      if (stBlinkBoth) lightsBlinkingOff();
+        if (!stBlinkLeft) {
+          setBlink(BLINK_LEFT);
+        } else {
+          setBlink(BLINK_OFF);
+        }
+      }
+
+      if (!blinkLeft && blinkRight) {
+        if (!stBlinkRight) {
+          setBlink(BLINK_RIGHT);
+        } else {
+          setBlink(BLINK_OFF);
+        }
+      }
+
+      if (blinkLeft && blinkRight) {
+        if (!stBlinkBoth) {
+          setBlink(BLINK_BOTH);
+        } else {
+          setBlink(BLINK_OFF);
+        }
+      }
     }
   }
+
 
   lightsBlinkingCheck();
 }
@@ -269,21 +335,6 @@ void slowDown() {
   }
 }
 
-void applyBrakes() {
-  stBrakes = true;
-  // Luz de stop
-  lightsStopOn();
-
-  // Motor 1
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  analogWrite(ENA, 0);
-
-  // Motor 2
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENB, 0);
-}
 
 long checkDistance() {
   digitalWrite(Trig, LOW);
@@ -297,25 +348,14 @@ long checkDistance() {
   return distance;
 }
 
-void turnTo(boolean side) {
-
+void turnTo(int angle) {
   autoCenterPreviousMillis = millis();
-
-  if (millis() - anglePreviousMillis >= angleInterval) {
-    anglePreviousMillis = millis();
-    if (side == TURN_RIGHT) {
-      // Giro a la derecha
-      if (stAngle < 135) {
-        stAngle += 10;
-        //steeringServo.write(angle);
-      }
-    } else if (side == TURN_LEFT) {
-      if (stAngle > 45) {
-        stAngle -= 10;
-        //steeringServo.write(angle);
-      }
-    }
+  if (angle > 88 && angle < 92) {
+    stAngle = 90;  // centro fijo
+  } else {
+    stAngle = angle;
   }
+  steeringServo.write(stAngle);
 }
 
 void autoCenterCheck() {
@@ -323,27 +363,24 @@ void autoCenterCheck() {
 
   // Si pasó más de 1 segundo sin comandos de giro
   if (currentMillis - autoCenterPreviousMillis >= autoCenterInterval) {
+
     autoCenterPreviousMillis = currentMillis;
 
-    if (position > 90) {
-      position -= 10;  // se acerca al centro desde la derecha
-      if (position < 90) position = 90;
-      //steeringServo.write(position);
-    } else if (position < 90) {
-      position += 10;  // se acerca al centro desde la izquierda
-      if (position > 90) position = 90;
-      //steeringServo.write(position);
+    if (stAngle > 90) {
+      stAngle -= 10;  // se acerca al centro desde la derecha
+    } else if (stAngle < 90) {
+      stAngle += 10;  // se acerca al centro desde la izquierda
     }
+
+    if (stAngle >= 85 && stAngle < 95) {
+      stAngle = 90;  // centro fijo
+    }
+
+    steeringServo.write(stAngle);
   }
 }
 
-void turnCenter() {
-  position = 90;
-  //steeringServo.write(90);
-}
-
 void setLights(int power) {
-
   switch (power) {
     case POWER_OFF:
       stLights = 0;
@@ -355,9 +392,6 @@ void setLights(int power) {
       stLights = 2;
       break;
   }
-  Serial.print("SET STATUS LIGHTS: ");
-  Serial.println(stLights);
-
   analogWrite(lightsPin, power);  // 0–255
 }
 
@@ -382,20 +416,46 @@ void lightsFlashCheck() {
   }
 }
 
-void lightsFlashOff() {
-  stFlash = false;
-  analogWrite(lightsPin, LOW);
-}
-
 void lightsStopOn() {
   stStop = true;
   digitalWrite(stopPin, HIGH);
 }
 
-void unapplyBrakes() {
-  stBrakes = false;
+void lightsStopOff() {
   stStop = false;
   digitalWrite(stopPin, LOW);
+}
+
+void applyNitro() {
+  stNitro = true;
+  Serial.println("APLLY NITRO");
+  setBlink(BLINK_BOTH);
+}
+
+void unapplyNitro() {
+  stNitro = false;
+  setBlink(BLINK_OFF);
+}
+
+void applyBrakes() {
+  stBrakes = true;
+  // Luz de stop
+  lightsStopOn();
+
+  // Motor 1
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, 0);
+
+  // Motor 2
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  analogWrite(ENB, 0);
+}
+
+void unapplyBrakes() {
+  stBrakes = false;
+  lightsStopOff();
 }
 
 void lightsReverseOn() {
@@ -417,18 +477,23 @@ void lightsBlinkingCheck() {
 
       // Cambiar estado
       stBlinkStatus = !stBlinkStatus;
+      buzzerTic();
 
       switch (stBlinkSide) {
         default:
         case 0:
           digitalWrite(blinkRightPin, LOW);
-          digitalWrite(blinkLeftPin, stBlinkStatus ? HIGH : LOW);
+          digitalWrite(blinkLeftPin, LOW);
           break;
         case 1:
+          digitalWrite(blinkRightPin, LOW);
+          digitalWrite(blinkLeftPin, stBlinkStatus ? HIGH : LOW);
+          break;
+        case 2:
           digitalWrite(blinkLeftPin, LOW);
           digitalWrite(blinkRightPin, stBlinkStatus ? HIGH : LOW);
           break;
-        case 2:
+        case 3:
           digitalWrite(blinkLeftPin, stBlinkStatus ? HIGH : LOW);
           digitalWrite(blinkRightPin, stBlinkStatus ? HIGH : LOW);
           break;
@@ -440,25 +505,34 @@ void lightsBlinkingCheck() {
   }
 }
 
-void lightsBlinkingOn(int side) {
+void setBlink(int side) {
+  Serial.print("SETBLINK: ");
+  Serial.println(side);
+
   stBlinkSide = side;
   switch (side) {
     case 0:
-      stBlinkLeft = true;
+      stBlinkLeft = false;
+      stBlinkRight = false;
+      stBlinkBoth = false;
       break;
     case 1:
-      stBlinkRight = true;
+      stBlinkLeft = true;
       break;
     case 2:
+      stBlinkRight = true;
+      break;
+    case 3:
       stBlinkBoth = true;
       break;
   }
 }
 
-void lightsBlinkingOff() {
-  stBlinkLeft = false;
-  stBlinkRight = false;
-  stBlinkBoth = false;
+
+void buzzerTic() {
+  analogWrite(buzzerPin, 255);
+  delay(2);
+  analogWrite(buzzerPin, 0);
 }
 
 void buzzerOn() {
@@ -467,7 +541,7 @@ void buzzerOn() {
   //   analogWrite(buzzerPin, tone);
   //   delay(200); // ajustá el delay para controlar la velocidad del barrido
   // }
-  analogWrite(buzzerPin, 30);
+  analogWrite(buzzerPin, 255);  // Servo quita PWM en Pin 9 y 10
 }
 
 void buzzerOff() {
