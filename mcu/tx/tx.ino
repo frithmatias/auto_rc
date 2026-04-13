@@ -41,7 +41,7 @@ void setup() {
   if (radio.begin()) {
     Serial.println("Hardware encontrado.");
   } else {
-    Serial.println("Hardware no encontrado. Revisa cables y alimentación.");
+    Serial.println("Hardware no encontrado.");
   }
 
   radio.openWritingPipe(address);  // Configura dirección de transmisión
@@ -65,14 +65,10 @@ void setup() {
   pinMode(pinBlinkLeft, INPUT_PULLUP);
   pinMode(pinBlinkRight, INPUT_PULLUP);
 
-  // if (!rfDriver.init()) {
-  //   Serial.println("RF init failed");
-  // }
 }
 
 void loop() {
 
-delay(500);
   int speed = analogRead(pinSpeed);  // 0–1023
   int angle = analogRead(pinAngle);  // 0–1023
 
@@ -103,16 +99,12 @@ delay(500);
 }
 
 void sendMessage(const char* state) {
-  // rfDriver.send((uint8_t*)state, strlen(state));
-  // rfDriver.waitPacketSent();
-  // Serial.print("Enviado: ");
-  // Serial.println(state);
+
   bool ok = radio.write(state, strlen(state) + 1);
 
   if (ok) {
-    Serial.print("Mensaje enviado: ");
     Serial.println(state);
   } else {
-    Serial.println("Error al enviar");
+    Serial.println("Error");
   }
 }

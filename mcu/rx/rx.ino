@@ -32,9 +32,9 @@ int IN4 = 9;
 
 int buzzerPin = 10;  //PWM
 
-// MOSI 11
-// MISO 12
-// SCK  13
+// MOSI 11 NRF24L01
+// MISO 12 NRF24L01
+// SCK  13 NRF24L01
 
 const byte address[6] = "00001";  // misma dirección que el transmisor
 RF24 radio(A0, A1);               // NRF24L01 CE, CSN
@@ -70,7 +70,7 @@ const bool GO_REVERSE = false;
 const bool TURN_RIGHT = true;
 const bool TURN_LEFT = false;
 const int POWER_OFF = 0;
-const int POWER_LOW = 150;
+const int POWER_LOW = 40;
 const int POWER_HIGH = 255;
 const int BLINK_OFF = 0;
 const int BLINK_LEFT = 1;
@@ -92,17 +92,12 @@ const long blinkInterval = 500;  // intervalo de parpadeo en ms
 
 void setup() {
 
-  // RF Communication
   Serial.begin(9600);
-  //rfReceiver.begin(1200);  // velocidad típica para 433 MHz
-  //if (!rfReceiver.init()) {
-  //  Serial.println("RF init failed");
-  //}
 
   if (radio.begin()) {
     Serial.println("Hardware encontrado.");
   } else {
-    Serial.println("Error de conexión con el módulo RF.");
+    Serial.println("Hardware no encontrado.");
   }
 
   radio.openReadingPipe(1, address);  // Configura dirección de recepción
@@ -158,15 +153,6 @@ void initStatus() {
   steeringServo.write(stAngle);
 }
 
-void loops() {
-  if (radio.available()) {
-    char msg[32] = "";
-    radio.read(&msg, sizeof(msg));  // lee hasta 32 bytes
-    Serial.print("Recibido: ");
-    Serial.println(msg);
-  }
-}
-
 void loop() {
 
   //uint8_t buf[32];
@@ -181,7 +167,6 @@ void loop() {
     //message[buflen] = '\0';
     char msg[32] = "";
     radio.read(&msg, sizeof(msg));  // lee hasta 32 bytes
-    Serial.print("Recibido: ");
     Serial.println(msg);
 
     // Parsear CSV
@@ -428,7 +413,6 @@ void lightsStopOff() {
 
 void applyNitro() {
   stNitro = true;
-  Serial.println("APLLY NITRO");
   setBlink(BLINK_BOTH);
 }
 
@@ -506,9 +490,6 @@ void lightsBlinkingCheck() {
 }
 
 void setBlink(int side) {
-  Serial.print("SETBLINK: ");
-  Serial.println(side);
-
   stBlinkSide = side;
   switch (side) {
     case 0:
